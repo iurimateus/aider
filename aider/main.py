@@ -22,7 +22,7 @@ from aider.analytics import Analytics
 from aider.args import get_parser
 from aider.coders import Coder
 from aider.coders.base_coder import UnknownEditFormat
-from aider.commands import Commands, SwitchCoder
+from aider.commands import Commands, SwitchCoder, UserCommandRegistry
 from aider.copypaste import ClipboardWatcher
 from aider.deprecated import handle_deprecated_model_args
 from aider.format_settings import format_settings, scrub_sensitive_info
@@ -934,6 +934,13 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         editor=args.editor,
         original_read_only_fnames=read_only_fnames,
     )
+
+    # Load user commands from config files
+    config_files = generate_search_path_list(".aider.conf.yml", git_root, args.config)
+    if args.cmd_file:
+        config_files.extend(args.cmd_file)
+
+    commands.user_commands.load_from_config(config_files)
 
     summarizer = ChatSummary(
         [main_model.weak_model, main_model],
