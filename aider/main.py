@@ -523,6 +523,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if args.timeout:
         models.request_timeout = args.timeout
 
+    if args.stream_timeout:
+        models.stream_timeout = args.stream_timeout
+
     if args.dark_mode:
         args.user_input_color = "#32FF32"
         args.tool_error_color = "#FF3333"
