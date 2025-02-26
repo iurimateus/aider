@@ -606,6 +606,10 @@ class Model(ModelSettings):
         hash_object = hashlib.sha1(key)
         if "timeout" not in kwargs:
             kwargs["timeout"] = request_timeout
+
+        if "stream_timeout" not in kwargs:
+            kwargs["stream_timeout"] = request_timeout
+
         res = litellm.completion(**kwargs)
         return hash_object, res
 

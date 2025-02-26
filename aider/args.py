@@ -221,6 +221,12 @@ def get_parser(default_config_files, git_root):
         help="Timeout in seconds for API calls (default: None)",
     )
     group.add_argument(
+        "--stream-timeout",
+        type=float,
+        default=None,
+        help="Stream timeout in seconds for API calls (default: None)",
+    )
+    group.add_argument(
         "--edit-format",
         "--chat-mode",
         metavar="EDIT_FORMAT",
