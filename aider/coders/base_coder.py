@@ -17,7 +17,7 @@ from collections import defaultdict
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
-from typing import List
+from typing import List, cast
 
 from aider import __version__, models, prompts, urls, utils
 from aider.analytics import Analytics
@@ -93,10 +93,12 @@ class Coder:
     test_outcome = None
     multi_response_content = ""
     partial_response_content = ""
+    partial_reasoning_content = ""
     commit_before_message = []
     message_cost = 0.0
     message_tokens_sent = 0
     message_tokens_received = 0
+    message_reasoning_tokens_received = 0
     add_cache_headers = False
     cache_warming_thread = None
     num_cache_warming_pings = 0
@@ -617,7 +619,8 @@ class Coder:
     def get_cur_message_text(self):
         text = ""
         for msg in self.cur_messages:
-            text += msg["content"] + "\n"
+            if "content" in msg:
+                text += msg["content"] + "\n"
         return text
 
     def get_ident_mentions(self, text):
@@ -1380,6 +1383,8 @@ class Coder:
 
         self.add_assistant_reply_to_cur_messages()
 
+        self.partial_reasoning_content = ""
+
         if exhausted:
             if self.cur_messages and self.cur_messages[-1]["role"] == "user":
                 self.cur_messages += [
@@ -1546,6 +1551,12 @@ class Coder:
         self.ok_to_warm_cache = False
 
     def add_assistant_reply_to_cur_messages(self):
+        # TODO we may want to pass reasoning if the next model is not
+        # a reasoning one, such as architect -> code
+        # if self.partial_reasoning_content:
+        #     self.cur_messages += [
+        #         dict(role="assistant", content=self.partial_reasoning_content)
+        #     ]
         if self.partial_response_content:
             self.cur_messages += [dict(role="assistant", content=self.partial_response_content)]
         if self.partial_response_function_call:
@@ -1745,8 +1756,12 @@ class Coder:
                 pass
 
             try:
-                text = chunk.choices[0].delta.content
-                if text:
+                choice = chunk.choices[0]
+
+                if reasoning_text := getattr(chunk, "reasoning_content", None):
+                    self.partial_reasoning_content += cast(str, reasoning_text)
+
+                if text := choice.delta.content:
                     self.partial_response_content += text
             except AttributeError:
                 text = None
@@ -1770,7 +1785,14 @@ class Coder:
         self.mdstream.update(show_resp, final=final)
 
     def render_incremental_response(self, final):
-        return self.get_multi_response_content_in_progress()
+        reasoning = self.get_reasoning_content_in_progress()
+        if reasoning:
+            reasoning = "[REASONING]\n\n" + reasoning
+
+        if reasoning and self.partial_response_content:
+            reasoning += "\n\n[END OF REASONING]\n\n"
+
+        return reasoning + self.get_multi_response_content_in_progress(final)
 
     def calculate_and_show_tokens_and_cost(self, messages, completion=None):
         prompt_tokens = 0
@@ -1797,8 +1819,12 @@ class Coder:
         else:
             prompt_tokens = self.main_model.token_count(messages)
             completion_tokens = self.main_model.token_count(self.partial_response_content)
+            reasoning_tokens = self.main_model.token_count(
+                self.partial_reasoning_content
+            )
             self.message_tokens_sent += prompt_tokens
 
+        self.message_reasoning_tokens_received += reasoning_tokens
         self.message_tokens_received += completion_tokens
 
         tokens_report = f"Tokens: {format_tokens(self.message_tokens_sent)} sent"
@@ -1807,7 +1833,19 @@ class Coder:
             tokens_report += f", {format_tokens(cache_write_tokens)} cache write"
         if cache_hit_tokens:
             tokens_report += f", {format_tokens(cache_hit_tokens)} cache hit"
-        tokens_report += f", {format_tokens(self.message_tokens_received)} received."
+        if self.message_reasoning_tokens_received:
+            received_total = (
+                self.message_reasoning_tokens_received + self.message_tokens_received
+            )
+
+            tokens_report += (
+                f", reasoning {format_tokens(self.message_reasoning_tokens_received)}"
+            )
+            tokens_report += f", completion {format_tokens(self.message_tokens_received)} (total {format_tokens(received_total)}) received."
+        else:
+            tokens_report += (
+                f", {format_tokens(self.message_tokens_received)} received."
+            )
 
         if not self.main_model.info.get("input_cost_per_token"):
             self.usage_report = tokens_report
@@ -1878,12 +1916,14 @@ class Coder:
 
         prompt_tokens = self.message_tokens_sent
         completion_tokens = self.message_tokens_received
+        reasoning_tokens = self.message_reasoning_tokens_received
         self.event(
             "message_send",
             main_model=self.main_model,
             edit_format=self.edit_format,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            reasoning_tokens=reasoning_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             cost=self.message_cost,
             total_cost=self.total_cost,
@@ -1892,6 +1932,25 @@ class Coder:
         self.message_cost = 0.0
         self.message_tokens_sent = 0
         self.message_tokens_received = 0
+        self.message_reasoning_tokens_received = 0
+        # self.partial_reasoning_content = ""
+
+    def get_reasoning_messages(self):
+        """Get the accumulated reasoning messages."""
+        return [m for m in self.cur_messages if getattr(m, "reasoning_content", None)]
+
+    def get_reasoning_content_in_progress(self):
+        """Get the reasoning content that is currently in progress.
+
+        Returns:
+            str: The accumulated reasoning content
+        """
+        new = self.partial_reasoning_content or ""
+
+        if new.rstrip() != new:
+            new = new.rstrip()
+
+        return new
 
     def get_multi_response_content_in_progress(self, final=False):
         cur = self.multi_response_content or ""
