@@ -1704,6 +1704,12 @@ class Coder:
             # Calculate costs for successful responses
             self.calculate_and_show_tokens_and_cost(messages, completion)
 
+            if not self.message_tokens_received:
+                self.io.tool_warning("No response tokens received. Retrying...")
+                raise litellm.utils.Timeout(
+                    "Empty response received from API", model="", llm_provider=""
+                )
+
         except LiteLLMExceptions().exceptions_tuple() as err:
             ex_info = LiteLLMExceptions().get_ex_info(err)
             if ex_info.name == "ContextWindowExceededError":
