@@ -1284,6 +1284,16 @@ class Coder:
     def send_message(self, inp):
         self.event("message_send_starting")
 
+        # Compress chat history if reasoning tokens exceed threshold
+        if self.total_reasoning_tokens > 8000:
+            try:
+                if self.verbose:
+                    self.io.tool_output("Compressing chat history...")
+                self.done_messages = self.summarizer.summarize(self.done_messages)
+                self.total_reasoning_tokens = 0  # Reset counter after compression
+            except ValueError as e:
+                self.io.tool_warning(f"History compression failed: {str(e)}")
+
         self.cur_messages += [
             dict(role="user", content=inp),
         ]
