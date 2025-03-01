@@ -1099,10 +1099,10 @@ class Coder:
             )
             rename_with_shell = ""
 
-        if self.chat_language:
-            language = self.chat_language
-        else:
-            language = "the same language they are using"
+        # if self.chat_language:
+        #     language = self.chat_language
+        # else:
+        #     language = "the same language they are using"
 
         if self.fence[0] == "`" * 4:
             quad_backtick_reminder = (
@@ -1120,7 +1120,6 @@ class Coder:
             rename_with_shell=rename_with_shell,
             shell_cmd_reminder=shell_cmd_reminder,
             go_ahead_tip=self.gpt_prompts.go_ahead_tip,
-            language=language,
         )
 
         if self.main_model.system_prompt_prefix:
