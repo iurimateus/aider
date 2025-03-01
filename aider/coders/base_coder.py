@@ -1059,10 +1059,10 @@ class Coder:
                 platform=platform_text
             )
 
-        if self.chat_language:
-            language = self.chat_language
-        else:
-            language = "the same language they are using"
+        # if self.chat_language:
+        #     language = self.chat_language
+        # else:
+        #     language = "the same language they are using"
 
         if self.fence[0] == "`" * 4:
             quad_backtick_reminder = (
@@ -1078,7 +1078,7 @@ class Coder:
             platform=platform_text,
             shell_cmd_prompt=shell_cmd_prompt,
             shell_cmd_reminder=shell_cmd_reminder,
-            language=language,
+            # language=language,
         )
 
         if self.main_model.system_prompt_prefix:
