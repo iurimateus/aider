@@ -95,6 +95,7 @@ class Coder:
     partial_response_content = ""
     partial_reasoning_content = ""
     commit_before_message = []
+    total_reasoning_tokens = 0
     message_cost = 0.0
     message_tokens_sent = 0
     message_tokens_received = 0
@@ -1627,7 +1628,10 @@ class Coder:
 
     def send(self, messages, model=None, functions=None):
         if not model:
-            model = self.main_model
+            if self.total_reasoning_tokens > 8000 and getattr(self.main_model, 'weak_model', None):
+                model = self.main_model.weak_model
+            else:
+                model = self.main_model
 
         self.partial_response_content = ""
         self.partial_response_function_call = dict()
@@ -1826,6 +1830,7 @@ class Coder:
             self.message_tokens_sent += prompt_tokens
 
         self.message_reasoning_tokens_received += reasoning_tokens
+        self.total_reasoning_tokens += reasoning_tokens
         self.message_tokens_received += completion_tokens
 
         tokens_report = f"Tokens: {format_tokens(self.message_tokens_sent)} sent"
