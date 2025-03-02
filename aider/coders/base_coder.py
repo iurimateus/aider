@@ -3,25 +3,26 @@
 import base64
 import hashlib
 import json
-import locale
 import math
 import mimetypes
 import os
-import platform
 import re
 import sys
 import threading
 import time
 import traceback
 from collections import defaultdict
-from datetime import datetime
+from collections.abc import Set
 from json.decoder import JSONDecodeError
 from pathlib import Path
 from typing import List, cast
 
-from aider import __version__, models, prompts, urls, utils
-from aider.coders.message_formatter import MessageFormatter
+from aider import __version__, models, urls, utils
 from aider.analytics import Analytics
+from .git_manager import GitManager
+from .mention_handler import MentionHandler
+from .message_formatter import MessageFormatter
+from .shell_handler import ShellHandler
 from aider.commands import Commands
 from aider.exceptions import LiteLLMExceptions
 from aider.history import ChatSummary
@@ -35,6 +36,12 @@ from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
 
 from ..dump import dump  # noqa: F401
+
+def get_ident_mentions(text):
+    # Split the string on any character that is not alphanumeric
+    # \W+ matches one or more non-word characters (equivalent to [^a-zA-Z0-9_]+)
+    words = set(re.split(r"\W+", text))
+    return words
 
 
 class UnknownEditFormat(ValueError):
@@ -71,7 +78,7 @@ all_fences = [
 
 class Coder:
     abs_fnames = None
-    abs_read_only_fnames = None
+    abs_read_only_fnames: Set | None = None
     repo = None
     last_aider_commit_hash = None
     aider_edited_files = None
@@ -377,7 +384,6 @@ class Coder:
         self.pretty = self.io.pretty
 
         self.main_model = main_model
-        self.message_formatter = MessageFormatter(self)
 
         self.stream = stream and main_model.streaming
 
@@ -431,6 +437,11 @@ class Coder:
 
         if not self.repo:
             self.root = utils.find_common_root(self.abs_fnames)
+
+        # Initialize handlers
+        self.git_manager = GitManager(self)
+        self.mention_handler = MentionHandler(self)
+        self.shell_handler = ShellHandler(self)
 
         if read_only_fnames:
             self.abs_read_only_fnames = set()
@@ -624,12 +635,6 @@ class Coder:
                 text += msg["content"] + "\n"
         return text
 
-    def get_ident_mentions(self, text):
-        # Split the string on any character that is not alphanumeric
-        # \W+ matches one or more non-word characters (equivalent to [^a-zA-Z0-9_]+)
-        words = set(re.split(r"\W+", text))
-        return words
-
     def get_ident_filename_matches(self, idents):
         all_fnames = defaultdict(set)
         for fname in self.get_all_relative_files():
@@ -660,8 +665,8 @@ class Coder:
             return
 
         cur_msg_text = self.get_cur_message_text()
-        mentioned_fnames = self.get_file_mentions(cur_msg_text)
-        mentioned_idents = self.get_ident_mentions(cur_msg_text)
+        mentioned_fnames = self.mention_handler.get_file_mentions(cur_msg_text)
+        mentioned_idents = get_ident_mentions(cur_msg_text)
 
         mentioned_fnames.update(self.get_ident_filename_matches(mentioned_idents))
 
@@ -865,7 +870,7 @@ class Coder:
         if self.commands.is_command(inp):
             return self.commands.run(inp)
 
-        self.check_for_file_mentions(inp)
+        self.mention_handler.check_for_file_mentions(inp)
         inp = self.check_for_urls(inp)
 
         return inp
@@ -1206,7 +1211,7 @@ class Coder:
             content = ""
 
         if not interrupted:
-            add_rel_files_message = self.check_for_file_mentions(content)
+            add_rel_files_message = self.mention_handler.check_for_file_mentions(content)
             if add_rel_files_message:
                 if self.reflected_message:
                     self.reflected_message += "\n\n" + add_rel_files_message
@@ -1253,7 +1258,7 @@ class Coder:
                     self.reflected_message = lint_errors
                     return
 
-        shared_output = self.run_shell_commands()
+        shared_output = self.shell_handler.run_shell_commands()
         if shared_output:
             self.cur_messages += [
                 dict(role="user", content=shared_output),
@@ -1363,71 +1368,6 @@ class Coder:
                     function_call=self.partial_response_function_call,
                 )
             ]
-
-    def get_file_mentions(self, content):
-        words = set(word for word in content.split())
-
-        # drop sentence punctuation from the end
-        words = set(word.rstrip(",.!;:?") for word in words)
-
-        # strip away all kinds of quotes
-        quotes = "".join(['"', "'", "`"])
-        words = set(word.strip(quotes) for word in words)
-
-        addable_rel_fnames = self.get_addable_relative_files()
-
-        # Get basenames of files already in chat or read-only
-        existing_basenames = {os.path.basename(f) for f in self.get_inchat_relative_files()} | {
-            os.path.basename(self.get_rel_fname(f)) for f in self.abs_read_only_fnames
-        }
-
-        mentioned_rel_fnames = set()
-        fname_to_rel_fnames = {}
-        for rel_fname in addable_rel_fnames:
-            # Skip files that share a basename with files already in chat
-            if os.path.basename(rel_fname) in existing_basenames:
-                continue
-
-            normalized_rel_fname = rel_fname.replace("\\", "/")
-            normalized_words = set(word.replace("\\", "/") for word in words)
-            if normalized_rel_fname in normalized_words:
-                mentioned_rel_fnames.add(rel_fname)
-
-            fname = os.path.basename(rel_fname)
-
-            # Don't add basenames that could be plain words like "run" or "make"
-            if "/" in fname or "\\" in fname or "." in fname or "_" in fname or "-" in fname:
-                if fname not in fname_to_rel_fnames:
-                    fname_to_rel_fnames[fname] = []
-                fname_to_rel_fnames[fname].append(rel_fname)
-
-        for fname, rel_fnames in fname_to_rel_fnames.items():
-            if len(rel_fnames) == 1 and fname in words:
-                mentioned_rel_fnames.add(rel_fnames[0])
-
-        return mentioned_rel_fnames
-
-    def check_for_file_mentions(self, content):
-        mentioned_rel_fnames = self.get_file_mentions(content)
-
-        new_mentions = mentioned_rel_fnames - self.ignore_mentions
-
-        if not new_mentions:
-            return
-
-        added_fnames = []
-        group = ConfirmGroup(new_mentions)
-        for rel_fname in sorted(new_mentions):
-            if self.io.confirm_ask(
-                "Add file to the chat?", subject=rel_fname, group=group, allow_never=True
-            ):
-                self.add_rel_fname(rel_fname)
-                added_fnames.append(rel_fname)
-            else:
-                self.ignore_mentions.add(rel_fname)
-
-        if added_fnames:
-            return prompts.added_files.format(fnames=", ".join(added_fnames))
 
     def send(self, messages, model=None, functions=None):
         if not model:
@@ -2054,55 +1994,3 @@ class Coder:
     def apply_edits_dry_run(self, edits):
         return edits
 
-    def run_shell_commands(self):
-        if not self.suggest_shell_commands:
-            return ""
-
-        done = set()
-        group = ConfirmGroup(set(self.shell_commands))
-        accumulated_output = ""
-        for command in self.shell_commands:
-            if command in done:
-                continue
-            done.add(command)
-            output = self.handle_shell_commands(command, group)
-            if output:
-                accumulated_output += output + "\n\n"
-        return accumulated_output
-
-    def handle_shell_commands(self, commands_str, group):
-        commands = commands_str.strip().splitlines()
-        command_count = sum(
-            1 for cmd in commands if cmd.strip() and not cmd.strip().startswith("#")
-        )
-        prompt = "Run shell command?" if command_count == 1 else "Run shell commands?"
-        if not self.io.confirm_ask(
-            prompt,
-            subject="\n".join(commands),
-            explicit_yes_required=True,
-            group=group,
-            allow_never=True,
-        ):
-            return
-
-        accumulated_output = ""
-        for command in commands:
-            command = command.strip()
-            if not command or command.startswith("#"):
-                continue
-
-            self.io.tool_output()
-            self.io.tool_output(f"Running {command}")
-            # Add the command to input history
-            self.io.add_to_input_history(f"/run {command.strip()}")
-            exit_status, output = run_cmd(command, error_print=self.io.tool_error, cwd=self.root)
-            if output:
-                accumulated_output += f"Output from {command}\n{output}\n"
-
-        if accumulated_output.strip() and self.io.confirm_ask(
-            "Add command output to the chat?", allow_never=True
-        ):
-            num_lines = len(accumulated_output.strip().splitlines())
-            line_plural = "line" if num_lines == 1 else "lines"
-            self.io.tool_output(f"Added {num_lines} {line_plural} of output to the chat.")
-            return accumulated_output

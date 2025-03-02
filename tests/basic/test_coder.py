@@ -137,7 +137,9 @@ class TestCoder(unittest.TestCase):
             coder = Coder.create(self.GPT35, None, mock_io)
 
             # Call the check_for_file_mentions method
-            coder.check_for_file_mentions("Please check file1.txt and file2.py")
+            coder.mention_handler.check_for_file_mentions(
+                "Please check file1.txt and file2.py"
+            )
 
             # Check if coder.abs_fnames contains both files
             expected_files = set(
@@ -166,8 +168,8 @@ class TestCoder(unittest.TestCase):
             coder.repo.get_tracked_files = mock
 
             # Call the check_for_file_mentions method
-            coder.check_for_file_mentions(f"Please check {fname}!")
 
+            coder.mention_handler.check_for_file_mentions(f"Please check {fname}!")
             self.assertEqual(coder.abs_fnames, set([str(fname.resolve())]))
 
     def test_skip_duplicate_basename_mentions(self):
@@ -193,12 +195,16 @@ class TestCoder(unittest.TestCase):
             coder.repo.get_tracked_files = mock
 
             # Check that file mentions skip files with duplicate basenames
-            mentioned = coder.get_file_mentions(f"Check {fname2} and {fname3}")
+            mentioned = coder.mention_handler.get_file_mentions(
+                f"Check {fname2} and {fname3}"
+            )
             self.assertEqual(mentioned, {str(fname3)})
 
             # Add a read-only file with same basename
             coder.abs_read_only_fnames.add(str(fname2.resolve()))
-            mentioned = coder.get_file_mentions(f"Check {fname1} and {fname3}")
+            mentioned = coder.mention_handler.get_file_mentions(
+                f"Check {fname1} and {fname3}"
+            )
             self.assertEqual(mentioned, {str(fname3)})
 
     def test_check_for_file_mentions_read_only(self):
@@ -220,7 +226,9 @@ class TestCoder(unittest.TestCase):
             coder.repo.get_tracked_files = mock
 
             # Call the check_for_file_mentions method
-            result = coder.check_for_file_mentions(f"Please check {fname}!")
+            result = coder.mention_handler.check_for_file_mentions(
+                f"Please check {fname}!"
+            )
 
             # Assert that the method returns None (user not asked to add the file)
             self.assertIsNone(result)
@@ -234,13 +242,17 @@ class TestCoder(unittest.TestCase):
             coder = Coder.create(self.GPT35, None, io)
 
             # Mock get_file_mentions to return two file names
-            coder.get_file_mentions = MagicMock(return_value=set(["file1.txt", "file2.txt"]))
+            coder.mention_handler.get_file_mentions = MagicMock(
+                return_value=set(["file1.txt", "file2.txt"])
+            )
 
             # Mock confirm_ask to return False for the first call and True for the second
             io.confirm_ask = MagicMock(side_effect=[False, True, True])
 
             # First call to check_for_file_mentions
-            coder.check_for_file_mentions("Please check file1.txt for the info")
+            coder.mention_handler.check_for_file_mentions(
+                "Please check file1.txt for the info"
+            )
 
             # Assert that confirm_ask was called twice
             self.assertEqual(io.confirm_ask.call_count, 2)
@@ -253,7 +265,9 @@ class TestCoder(unittest.TestCase):
             io.confirm_ask.reset_mock()
 
             # Second call to check_for_file_mentions
-            coder.check_for_file_mentions("Please check file1.txt and file2.txt again")
+            coder.mention_handler.check_for_file_mentions(
+                "Please check file1.txt and file2.txt again"
+            )
 
             # Assert that confirm_ask was called only once (for file1.txt)
             self.assertEqual(io.confirm_ask.call_count, 1)
@@ -279,7 +293,7 @@ class TestCoder(unittest.TestCase):
             coder.repo.get_tracked_files = mock
 
             # Call the check_for_file_mentions method
-            coder.check_for_file_mentions(f"Please check `{fname}`")
+            coder.mention_handler.check_for_file_mentions(f"Please check `{fname}`")
 
             self.assertEqual(coder.abs_fnames, set([str(fname.resolve())]))
 
@@ -313,7 +327,7 @@ class TestCoder(unittest.TestCase):
             for content, addable_files in test_cases:
                 with self.subTest(content=content, addable_files=addable_files):
                     coder.get_addable_relative_files = MagicMock(return_value=set(addable_files))
-                    mentioned_files = coder.get_file_mentions(content)
+                    mentioned_files = coder.mention_handler.get_file_mentions(content)
                     expected_files = set(addable_files)
                     self.assertEqual(
                         mentioned_files,
@@ -839,7 +853,7 @@ This command will print 'Hello, World!' to the console."""
             coder.send = mock_send
 
             # Mock the handle_shell_commands method to check if it's called
-            coder.handle_shell_commands = MagicMock()
+            coder.shell_handler._process_commands = MagicMock()
 
             # Run the coder with a message
             coder.run(with_message="Suggest a shell command")
@@ -849,7 +863,7 @@ This command will print 'Hello, World!' to the console."""
             self.assertEqual(coder.shell_commands[0].strip(), 'echo "Hello, World!"')
 
             # Check if handle_shell_commands was called with the correct argument
-            coder.handle_shell_commands.assert_called_once()
+            coder.shell_handler._process_commands.assert_called_once()
 
     def test_no_suggest_shell_commands(self):
         with GitTemporaryDirectory():
