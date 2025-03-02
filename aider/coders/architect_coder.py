@@ -1,9 +1,8 @@
 from .architect_prompts import ArchitectPrompts
-from .ask_coder import AskCoder
 from .base_coder import Coder
 
 
-class ArchitectCoder(AskCoder):
+class ArchitectCoder(Coder):
     edit_format = "architect"
     gpt_prompts = ArchitectPrompts()
     auto_accept_architect = False
@@ -17,6 +16,21 @@ class ArchitectCoder(AskCoder):
         if not self.auto_accept_architect and not self.io.confirm_ask("Edit the files?"):
             return
 
+        self.run_with_editor(content)
+
+    def run_with_editor(self, content, preproc=False):
+        editor_coder = self.create_editor_coder()
+
+        if self.verbose:
+            editor_coder.show_announcements()
+
+        editor_coder.run(with_message=content, preproc=preproc)
+
+        self.move_back_cur_messages("I made those changes to the files.")
+        self.total_cost = editor_coder.total_cost
+        self.aider_commit_hashes = editor_coder.aider_commit_hashes
+
+    def create_editor_coder(self):
         kwargs = dict()
 
         # Use the editor_model from the main_model if it exists, otherwise use the main_model itself
@@ -38,11 +52,4 @@ class ArchitectCoder(AskCoder):
         editor_coder.cur_messages = []
         editor_coder.done_messages = []
 
-        if self.verbose:
-            editor_coder.show_announcements()
-
-        editor_coder.run(with_message=content, preproc=False)
-
-        self.move_back_cur_messages("I made those changes to the files.")
-        self.total_cost = editor_coder.total_cost
-        self.aider_commit_hashes = editor_coder.aider_commit_hashes
+        return editor_coder
