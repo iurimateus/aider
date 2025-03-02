@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, cast
 
 from aider import __version__, models, prompts, urls, utils
+from aider.coders.message_formatter import MessageFormatter
 from aider.analytics import Analytics
 from aider.commands import Commands
 from aider.exceptions import LiteLLMExceptions
@@ -34,7 +35,6 @@ from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
 
 from ..dump import dump  # noqa: F401
-from .chat_chunks import ChatChunks
 
 
 class UnknownEditFormat(ValueError):
@@ -377,6 +377,7 @@ class Coder:
         self.pretty = self.io.pretty
 
         self.main_model = main_model
+        self.message_formatter = MessageFormatter(self)
 
         self.stream = stream and main_model.streaming
 
@@ -988,214 +989,9 @@ class Coder:
             ]
         self.cur_messages = []
 
-    def get_user_language(self):
-        if self.chat_language:
-            return self.chat_language
-
-        try:
-            lang = locale.getlocale()[0]
-            if lang:
-                return lang  # Return the full language code, including country
-        except Exception:
-            pass
-
-        for env_var in ["LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES"]:
-            lang = os.environ.get(env_var)
-            if lang:
-                return lang.split(".")[
-                    0
-                ]  # Return language and country, but remove encoding if present
-
-        return None
-
-    def get_platform_info(self):
-        platform_text = f"- Platform: {platform.platform()}\n"
-        shell_var = "COMSPEC" if os.name == "nt" else "SHELL"
-        shell_val = os.getenv(shell_var)
-        platform_text += f"- Shell: {shell_var}={shell_val}\n"
-
-        user_lang = self.get_user_language()
-        if user_lang:
-            platform_text += f"- Language: {user_lang}\n"
-
-        dt = datetime.now().astimezone().strftime("%Y-%m-%d")
-        platform_text += f"- Current date: {dt}\n"
-
-        if self.repo:
-            platform_text += "- The user is operating inside a git repository\n"
-
-        if self.lint_cmds:
-            if self.auto_lint:
-                platform_text += (
-                    "- The user's pre-commit runs these lint commands, don't suggest running"
-                    " them:\n"
-                )
-            else:
-                platform_text += "- The user prefers these lint commands:\n"
-            for lang, cmd in self.lint_cmds.items():
-                if lang is None:
-                    platform_text += f"  - {cmd}\n"
-                else:
-                    platform_text += f"  - {lang}: {cmd}\n"
-
-        if self.test_cmd:
-            if self.auto_test:
-                platform_text += (
-                    "- The user's pre-commit runs this test command, don't suggest running them: "
-                )
-            else:
-                platform_text += "- The user prefers this test command: "
-            platform_text += self.test_cmd + "\n"
-
-        return platform_text
-
-    def fmt_system_prompt(self, prompt):
-        lazy_prompt = self.gpt_prompts.lazy_prompt if self.main_model.lazy else ""
-        platform_text = self.get_platform_info()
-
-        if self.suggest_shell_commands:
-            shell_cmd_prompt = self.gpt_prompts.shell_cmd_prompt.format(platform=platform_text)
-            shell_cmd_reminder = self.gpt_prompts.shell_cmd_reminder.format(platform=platform_text)
-        else:
-            shell_cmd_prompt = self.gpt_prompts.no_shell_cmd_prompt.format(platform=platform_text)
-            shell_cmd_reminder = self.gpt_prompts.no_shell_cmd_reminder.format(
-                platform=platform_text
-            )
-
-        # if self.chat_language:
-        #     language = self.chat_language
-        # else:
-        #     language = "the same language they are using"
-
-        if self.fence[0] == "`" * 4:
-            quad_backtick_reminder = (
-                "\nIMPORTANT: Use *quadruple* backticks ```` as fences, not triple backticks!\n"
-            )
-        else:
-            quad_backtick_reminder = ""
-
-        prompt = prompt.format(
-            fence=self.fence,
-            quad_backtick_reminder=quad_backtick_reminder,
-            lazy_prompt=lazy_prompt,
-            platform=platform_text,
-            shell_cmd_prompt=shell_cmd_prompt,
-            shell_cmd_reminder=shell_cmd_reminder,
-            # language=language,
-        )
-
-        if self.main_model.system_prompt_prefix:
-            prompt = self.main_model.system_prompt_prefix + prompt
-
-        return prompt
-
-    def format_chat_chunks(self):
-        self.choose_fence()
-        main_sys = self.fmt_system_prompt(self.gpt_prompts.main_system)
-
-        example_messages = []
-        if self.main_model.examples_as_sys_msg:
-            if self.gpt_prompts.example_messages:
-                main_sys += "\n# Example conversations:\n\n"
-            for msg in self.gpt_prompts.example_messages:
-                role = msg["role"]
-                content = self.fmt_system_prompt(msg["content"])
-                main_sys += f"## {role.upper()}: {content}\n\n"
-            main_sys = main_sys.strip()
-        else:
-            for msg in self.gpt_prompts.example_messages:
-                example_messages.append(
-                    dict(
-                        role=msg["role"],
-                        content=self.fmt_system_prompt(msg["content"]),
-                    )
-                )
-            if self.gpt_prompts.example_messages:
-                example_messages += [
-                    dict(
-                        role="user",
-                        content=(
-                            "I switched to a new code base. Please don't consider the above files"
-                            " or try to edit them any longer."
-                        ),
-                    ),
-                    dict(role="assistant", content="Ok."),
-                ]
-
-        if self.gpt_prompts.system_reminder:
-            main_sys += "\n" + self.fmt_system_prompt(self.gpt_prompts.system_reminder)
-
-        chunks = ChatChunks()
-
-        if self.main_model.use_system_prompt:
-            chunks.system = [
-                dict(role="system", content=main_sys),
-            ]
-        else:
-            chunks.system = [
-                dict(role="user", content=main_sys),
-                dict(role="assistant", content="Ok."),
-            ]
-
-        chunks.examples = example_messages
-
-        self.summarize_end()
-        chunks.done = self.done_messages
-
-        chunks.repo = self.get_repo_messages()
-        chunks.readonly_files = self.get_readonly_files_messages()
-        chunks.chat_files = self.get_chat_files_messages()
-
-        if self.gpt_prompts.system_reminder:
-            reminder_message = [
-                dict(
-                    role="system", content=self.fmt_system_prompt(self.gpt_prompts.system_reminder)
-                ),
-            ]
-        else:
-            reminder_message = []
-
-        chunks.cur = list(self.cur_messages)
-        chunks.reminder = []
-
-        # TODO review impact of token count on image messages
-        messages_tokens = self.main_model.token_count(chunks.all_messages())
-        reminder_tokens = self.main_model.token_count(reminder_message)
-        cur_tokens = self.main_model.token_count(chunks.cur)
-
-        if None not in (messages_tokens, reminder_tokens, cur_tokens):
-            total_tokens = messages_tokens + reminder_tokens + cur_tokens
-        else:
-            # add the reminder anyway
-            total_tokens = 0
-
-        if chunks.cur:
-            final = chunks.cur[-1]
-        else:
-            final = None
-
-        max_input_tokens = self.main_model.info.get("max_input_tokens") or 0
-        # Add the reminder prompt if we still have room to include it.
-        if (
-            not max_input_tokens
-            or total_tokens < max_input_tokens
-            and self.gpt_prompts.system_reminder
-        ):
-            if self.main_model.reminder == "sys":
-                chunks.reminder = reminder_message
-            elif self.main_model.reminder == "user" and final and final["role"] == "user":
-                # stuff it into the user message
-                new_content = (
-                    final["content"]
-                    + "\n\n"
-                    + self.fmt_system_prompt(self.gpt_prompts.system_reminder)
-                )
-                chunks.cur[-1] = dict(role=final["role"], content=new_content)
-
-        return chunks
-
     def format_messages(self):
-        chunks = self.format_chat_chunks()
+        self.choose_fence()
+        chunks = MessageFormatter.format_chat_chunks(self)
         if self.add_cache_headers:
             chunks.add_cache_control_headers()
 

@@ -22,6 +22,7 @@ from aider.repo import ANY_GIT_ERROR
 from aider.run_cmd import run_cmd
 from aider.scrape import Scraper, install_playwright
 from aider.utils import is_image_file
+from .coders.message_formatter import MessageFormatter
 
 from .dump import dump  # noqa: F401
 
@@ -375,13 +376,19 @@ class Commands:
         self.coder.choose_fence()
 
         # system messages
-        main_sys = self.coder.fmt_system_prompt(self.coder.gpt_prompts.main_system)
-        main_sys += "\n" + self.coder.fmt_system_prompt(self.coder.gpt_prompts.system_reminder)
+        main_sys = MessageFormatter.fmt_system_prompt(
+            self.coder, self.coder.gpt_prompts.main_system
+        )
+        main_sys += "\n" + MessageFormatter.fmt_system_prompt(
+            self.coder, self.coder.gpt_prompts.system_reminder
+        )
         msgs = [
             dict(role="system", content=main_sys),
             dict(
                 role="system",
-                content=self.coder.fmt_system_prompt(self.coder.gpt_prompts.system_reminder),
+                content=MessageFormatter.fmt_system_prompt(
+                    self.coder, self.coder.gpt_prompts.system_reminder
+                ),
             ),
         ]
 
