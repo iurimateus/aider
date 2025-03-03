@@ -19,11 +19,11 @@ class MentionHandler:
 
     def _find_matching_files(self, words):
         existing_basenames = self._get_existing_basenames()
-        return {
-            rel_fname
-            for rel_fname in self.coder.get_addable_relative_files()
-            if self._is_mentioned(rel_fname, words, existing_basenames)
-        }
+        matched_files = set()
+        for rel_fname in self.coder.get_addable_relative_files():
+            if self._is_mentioned(rel_fname, words, existing_basenames):
+                matched_files.add(os.path.normpath(rel_fname))
+        return matched_files
 
     def _get_existing_basenames(self):
         return {
@@ -34,9 +34,11 @@ class MentionHandler:
             for f in self.coder.abs_read_only_fnames
         }
 
-    def _is_mentioned(self, rel_fname, words, existing_basenames):
-        normalized = rel_fname.replace("\\", "/")
-        if normalized in {w.replace("\\", "/") for w in words}:
+    def _is_mentioned(self, rel_fname, words, existing_basenames, basename_counts):
+        # Normalize paths to forward slashes for consistent comparison
+        normalized = os.path.normpath(rel_fname).replace("\\", "/")
+        normalized_words = {os.path.normpath(w).replace("\\", "/") for w in words}
+        if normalized in normalized_words:
             return True
         basename = os.path.basename(rel_fname)
         return basename not in existing_basenames and basename in words
