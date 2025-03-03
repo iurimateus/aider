@@ -2,10 +2,15 @@ import math
 import os
 import queue
 import tempfile
+import threading
 import time
 import warnings
 
+from prompt_toolkit.application import get_app
 from prompt_toolkit.shortcuts import prompt
+from prompt_toolkit.eventloop.inputhook import (
+    InputHookContext,
+)
 
 from aider.llm import litellm
 
@@ -42,7 +47,6 @@ class Voice:
             raise SoundDeviceError
         self.model = model
         try:
-            print("Initializing sound device...")
             import sounddevice as sd
 
             self.sd = sd
@@ -116,7 +120,6 @@ class Voice:
 
     def raw_record_and_transcribe(self, history, language):
         self.q = queue.Queue()
-
         temp_wav = tempfile.mktemp(suffix=".wav")
 
         try:
@@ -124,19 +127,57 @@ class Voice:
         except (TypeError, ValueError):
             sample_rate = 16000  # fallback to 16kHz if unable to query device
         except self.sd.PortAudioError:
-            raise SoundDeviceError(
-                "No audio input device detected. Please check your audio settings and try again."
-            )
+            raise SoundDeviceError("No audio input device detected.")
 
         self.start_time = time.time()
+        last_active_time = self.start_time
+        stop_event = threading.Event()  # Thread-safe event for stopping
+
+        def run_prompt():
+            try:
+                # Create input hook that checks our stop condition
+                def inputhook(context: InputHookContext):
+                    if stop_event.is_set():
+                        get_app().loop.call_soon_threadsafe(get_app().exit, EOFError())
+                        return
+                    time.sleep(0.2)
+
+                # Run the prompt with our input hook
+                prompt(
+                    self.get_prompt,
+                    refresh_interval=0.1,
+                    inputhook=inputhook,
+                    # in_thread=True,
+                )
+                stop_event.set()
+
+            except (KeyboardInterrupt, EOFError):
+                stop_event.set()
+
+        input_thread = threading.Thread(target=run_prompt, daemon=True)
+        input_thread.start()
 
         try:
+            timeout = 5  # seconds
             with self.sd.InputStream(
                 samplerate=sample_rate, channels=1, callback=self.callback, device=self.device_id
             ):
-                prompt(self.get_prompt, refresh_interval=0.1)
+                while not stop_event.is_set():
+                    current_time = time.time()
+                    if self.pct >= self.threshold + 0.02:
+                        last_active_time = current_time
+
+                    if current_time - last_active_time >= timeout:
+                        break
+
+                    # Shorter wait period allows checking activity more frequently
+                    stop_event.wait(0.2)
+
         except self.sd.PortAudioError as err:
             raise SoundDeviceError(f"Error accessing audio input device: {err}")
+        finally:
+            stop_event.set()
+            input_thread.join(timeout=1)
 
         with sf.SoundFile(temp_wav, mode="x", samplerate=sample_rate, channels=1) as file:
             while not self.q.empty():
@@ -147,7 +188,7 @@ class Voice:
         # Check file size and offer to convert to mp3 if too large
         file_size = os.path.getsize(temp_wav)
         if file_size > 24.9 * 1024 * 1024 and self.audio_format == "wav":
-            print("\nWarning: {temp_wav} is too large, switching to mp3 format.")
+            print(f"\nWarning: {temp_wav} is too large, switching to mp3 format.")
             use_audio_format = "mp3"
 
         filename = temp_wav
