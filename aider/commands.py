@@ -86,6 +86,18 @@ class Commands:
         models.sanity_check_models(self.io, model)
         raise SwitchCoder(main_model=model)
 
+    def cmd_editor_model(self, args):
+        "Switch to a new LLM"
+
+        model_name = args.strip()
+        model = models.Model(
+            self.coder.main_model.name,
+            editor_model=model_name,
+            weak_model=self.coder.main_model.weak_model.name,
+        )
+        models.sanity_check_models(self.io, model)
+        raise SwitchCoder(main_model=model)
+
     def cmd_chat_mode(self, args):
         "Switch to a new chat mode"
 
