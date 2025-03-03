@@ -18,8 +18,8 @@ class ArchitectCoder(Coder):
 
         self.run_with_editor(content)
 
-    def run_with_editor(self, content, preproc=False):
-        editor_coder = self.create_editor_coder()
+    def run_with_editor(self, content, preproc=False, keep_messages=False):
+        editor_coder = self.create_editor_coder(keep_messages)
 
         if self.verbose:
             editor_coder.show_announcements()
@@ -30,7 +30,7 @@ class ArchitectCoder(Coder):
         self.total_cost = editor_coder.total_cost
         self.aider_commit_hashes = editor_coder.aider_commit_hashes
 
-    def create_editor_coder(self):
+    def create_editor_coder(self, keep_messages=False):
         kwargs = dict()
 
         # Use the editor_model from the main_model if it exists, otherwise use the main_model itself
@@ -43,13 +43,14 @@ class ArchitectCoder(Coder):
         kwargs["total_cost"] = self.total_cost
         kwargs["cache_prompts"] = False
         kwargs["num_cache_warming_pings"] = 0
-        kwargs["summarize_from_coder"] = False
+        kwargs["summarize_from_coder"] = keep_messages
 
         new_kwargs = dict(io=self.io, from_coder=self)
         new_kwargs.update(kwargs)
 
         editor_coder = Coder.create(**new_kwargs)
-        editor_coder.cur_messages = []
-        editor_coder.done_messages = []
+        if not keep_messages:
+            editor_coder.cur_messages = []
+            editor_coder.done_messages = []
 
         return editor_coder

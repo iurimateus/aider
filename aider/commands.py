@@ -1156,7 +1156,13 @@ class Commands:
 
     def cmd_code(self, args):
         """Ask for changes to your code. If no prompt provided, switches to code mode."""  # noqa
-        return self._generic_chat_command(args, self.coder.main_model.edit_format)
+        match self.coder.edit_format:
+            case "architect" if args.strip():
+                self.coder.run_with_editor(args, preproc=True, keep_messages=True)
+                return
+            case _:
+                edit_format = self.coder.main_model.edit_format
+                return self._generic_chat_command(args, edit_format)
 
     def cmd_architect(self, args):
         """Enter architect/editor mode using 2 different models. If no prompt provided, switches to architect/editor mode."""  # noqa
