@@ -37,9 +37,10 @@ class Voice:
 
     threshold = 0.15
 
-    def __init__(self, audio_format="wav", device_name=None):
+    def __init__(self, audio_format="wav", device_name=None, model="whisper-1"):
         if sf is None:
             raise SoundDeviceError
+        self.model = model
         try:
             print("Initializing sound device...")
             import sounddevice as sd
@@ -167,7 +168,11 @@ class Voice:
         with open(filename, "rb") as fh:
             try:
                 transcript = litellm.transcription(
-                    model="whisper-1", file=fh, prompt=history, language=language
+                    model=self.model,
+                    file=fh,
+                    prompt=history,
+                    language=language,
+                    custom_llm_provider="openai",
                 )
             except Exception as err:
                 print(f"Unable to transcribe {filename}: {err}")
