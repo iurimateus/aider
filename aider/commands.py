@@ -41,6 +41,7 @@ class Commands:
             self.io,
             None,
             voice_language=self.voice_language,
+            voice_model=self.voice_model,
             verify_ssl=self.verify_ssl,
             args=self.args,
             parser=self.parser,
@@ -55,6 +56,7 @@ class Commands:
         voice_language=None,
         voice_input_device=None,
         voice_format=None,
+        voice_model=None,
         verify_ssl=True,
         args=None,
         parser=None,
@@ -74,6 +76,7 @@ class Commands:
         self.voice_language = voice_language
         self.voice_format = voice_format
         self.voice_input_device = voice_input_device
+        self.voice_model: str | None = voice_model
 
         self.help = None
         self.editor = editor
@@ -1155,7 +1158,9 @@ class Commands:
                 return
             try:
                 self.voice = voice.Voice(
-                    audio_format=self.voice_format or "wav", device_name=self.voice_input_device
+                    audio_format=self.voice_format or "wav",
+                    device_name=self.voice_input_device,
+                    model=self.voice_model,
                 )
             except voice.SoundDeviceError:
                 self.io.tool_error(
