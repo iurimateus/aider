@@ -51,7 +51,9 @@ Start a new paragraph every time the topic changes!
 This is only part of a longer conversation so *DO NOT* conclude the summary with language like "Finally, ...". Because the conversation continues after the summary.
 The summary *MUST* include the function names, libraries, packages that are being discussed.
 The summary *MUST* include the filenames that are being referenced by the assistant inside the ```...``` fenced code blocks!
-The summaries *MUST NOT* include ```...``` fenced code blocks!
+The summary *MUST NOT* include ```...``` fenced code blocks!
+The summary *MUST NOT* include multiline code blocks!
+The summary *MUST NOT* include SEARCH/REPLACE blocks!
 
 Phrase the summary with the USER in first person, telling the ASSISTANT about the conversation.
 Write *as* the user.
