@@ -1,6 +1,8 @@
 import os
+from collections import defaultdict
 from aider.io import ConfirmGroup
 from aider import prompts
+
 
 class MentionHandler:
     def __init__(self, coder):
@@ -19,17 +21,21 @@ class MentionHandler:
 
     def _find_matching_files(self, words):
         existing_basenames = self._get_existing_basenames()
+        addable_files = self.coder.get_addable_relative_files()
+
+        # Count basename occurrences in addable files
+        basename_counts = defaultdict(int)
+        for f in addable_files:
+            basename_counts[os.path.basename(f)] += 1
+
         matched_files = set()
-        for rel_fname in self.coder.get_addable_relative_files():
-            if self._is_mentioned(rel_fname, words, existing_basenames):
+        for rel_fname in addable_files:
+            if self._is_mentioned(rel_fname, words, existing_basenames, basename_counts):
                 matched_files.add(os.path.normpath(rel_fname))
         return matched_files
 
     def _get_existing_basenames(self):
-        return {
-            os.path.basename(f)
-            for f in self.coder.get_inchat_relative_files()
-        } | {
+        return {os.path.basename(f) for f in self.coder.get_inchat_relative_files()} | {
             os.path.basename(self.coder.get_rel_fname(f))
             for f in self.coder.abs_read_only_fnames
         }
@@ -41,15 +47,28 @@ class MentionHandler:
         if normalized in normalized_words:
             return True
         basename = os.path.basename(rel_fname)
-        return basename not in existing_basenames and basename in words
+        return (
+            basename_counts[basename] == 1
+            and basename not in existing_basenames
+            and basename in words
+        )
 
     def _process_new_mentions(self, new_mentions):
         added_files = []
         group = ConfirmGroup(new_mentions)
         for rel_fname in sorted(new_mentions):
-            if self.io.confirm_ask("Add file to the chat?", subject=rel_fname, group=group, allow_never=True):
+            if self.io.confirm_ask(
+                "Add file to the chat?",
+                subject=rel_fname,
+                group=group,
+                allow_never=True,
+            ):
                 self.coder.add_rel_fname(rel_fname)
                 added_files.append(rel_fname)
             else:
                 self.ignore_mentions.add(rel_fname)
-        return prompts.added_files.format(fnames=", ".join(added_files)) if added_files else None
+        return (
+            prompts.added_files.format(fnames=", ".join(added_files))
+            if added_files
+            else None
+        )
