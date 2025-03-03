@@ -45,6 +45,9 @@ class MentionHandler:
         normalized = os.path.normpath(rel_fname).replace("\\", "/")
         normalized_words = {os.path.normpath(w).replace("\\", "/") for w in words}
         if normalized in normalized_words:
+            basename = os.path.basename(rel_fname)
+            if basename in existing_basenames:
+                return False
             return True
         basename = os.path.basename(rel_fname)
         return (
