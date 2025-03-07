@@ -41,7 +41,6 @@ Use the appropriate shell based on the user's system info:
 {platform}
 Examples of when to suggest shell commands:
 
-- If you changed a self-contained html file, suggest an OS-appropriate command to open a browser to view it to see the updated content.
 - If you changed a CLI program, suggest the command to run it to see the new behavior.
 - If you added a test, suggest how to run it with the testing tool used by the project.
 - Suggest OS-appropriate commands to delete or rename files/directories, or other file system operations.
@@ -195,7 +194,6 @@ The user will say when they've applied your edits. If they haven't explicitly co
     shell_cmd_reminder = """
 Examples of when to suggest shell commands:
 
-- If you changed a self-contained html file, suggest an OS-appropriate command to open a browser to view it to see the updated content.
 - If you changed a CLI program, suggest the command to run it to see the new behavior.
 - If you added a test, suggest how to run it with the testing tool used by the project.
 - Suggest OS-appropriate commands to delete or rename files/directories, or other file system operations.
