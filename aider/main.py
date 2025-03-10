@@ -1146,6 +1146,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             coder.ok_to_warm_cache = bool(args.cache_keepalive_pings)
             coder.run()
             analytics.event("exit", reason="Completed main CLI coder.run")
+            if commands.vad_voice:
+                commands.vad_voice.stop()
             return
         except SwitchCoder as switch:
             coder.ok_to_warm_cache = False

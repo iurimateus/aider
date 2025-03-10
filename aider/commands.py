@@ -70,6 +70,8 @@ class Commands:
         self.parser = parser
         self.args = args
         self.verbose = verbose
+        self.voice: voice.Voice | None = None
+        self.vad_voice: voice.VADVoice | None = None
 
         self.verify_ssl = verify_ssl
         if voice_language == "auto":
@@ -1157,7 +1159,7 @@ class Commands:
         """Ask questions about the code base without editing any files. If no prompt provided, switches to ask mode."""  # noqa
         return self._generic_chat_command(args, "ask")
 
-    def cmd_code(self, args):
+    def cmd_code(self, args: str):
         """Ask for changes to your code. If no prompt provided, switches to code mode."""  # noqa
         match self.coder.edit_format:
             case "architect" if args.strip():
@@ -1391,6 +1393,32 @@ class Commands:
         repo_map = self.coder.get_repo_map(force_refresh=True)
         if repo_map:
             self.io.tool_output("The repo map has been refreshed, use /map to view it.")
+
+    def cmd_vad(self, args):
+        "Toggle voice activity detection (VAD) for automatic transcription"
+        if not self.vad_voice:
+            try:
+                from silero_vad import VADIterator, get_speech_timestamps
+            except ImportError:
+                self.io.tool_error("Silero VAD requires silero-vad package")
+                self.io.tool_output("Install with: pip install silero-vad")
+                return
+
+            try:
+                self.vad_voice = voice.VADVoice(
+                    self.io,
+                    audio_format=self.voice_format or "wav",
+                    device_name=self.voice_input_device,
+                    language=self.voice_language,
+                    model=self.voice_model,
+                )
+            except voice.SoundDeviceError:
+                self.io.tool_error("VAD requires sounddevice and soundfile")
+                return
+
+        self.vad_voice.toggle()
+        status = "enabled" if self.vad_voice.enabled else "disabled"
+        self.io.tool_output(f"Voice activity detection {status}")
 
     def cmd_settings(self, args):
         "Print out the current settings"
