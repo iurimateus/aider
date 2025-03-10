@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .io import InputOutput
 
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
@@ -67,6 +71,19 @@ def restore_multiline(func):
             raise
         finally:
             self.multiline_mode = orig_multiline
+
+    return wrapper
+
+def manage_prompt_state(func):
+    """Decorator to manage prompt_active state during input methods"""
+
+    @functools.wraps(func)
+    def wrapper(self: "InputOutput", *args, **kwargs):
+        self.prompt_active = True
+        try:
+            return func(self, *args, **kwargs)
+        finally:
+            self.prompt_active = False
 
     return wrapper
 
@@ -233,6 +250,7 @@ class InputOutput:
     clipboard_watcher = None
     bell_on_next_input = False
     notifications_command = None
+    prompt_active = False
 
     def __init__(
         self,
@@ -792,6 +810,7 @@ class InputOutput:
             return True
         return False
 
+    @manage_prompt_state
     @restore_multiline
     def confirm_ask(
         self,
@@ -913,6 +932,7 @@ class InputOutput:
 
         return is_yes
 
+    @manage_prompt_state
     @restore_multiline
     def prompt_ask(self, question, default="", subject=None):
         self.num_user_asks += 1
