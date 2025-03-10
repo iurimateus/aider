@@ -169,7 +169,7 @@ def check_gitignore(git_root, io, ask=True):
         if not patterns_to_add:
             return
 
-        gitignore_file = Path(git_root) / ".gitignore"
+        gitignore_file = Path(git_root) / ".git/info/exclude"
         if gitignore_file.exists():
             try:
                 content = io.read_text(gitignore_file)
@@ -187,18 +187,20 @@ def check_gitignore(git_root, io, ask=True):
 
     if ask:
         io.tool_output("You can skip this check with --no-gitignore")
-        if not io.confirm_ask(f"Add {', '.join(patterns_to_add)} to .gitignore (recommended)?"):
+        if not io.confirm_ask(
+            f"Add {', '.join(patterns_to_add)} to .git/info/exclude (recommended)?"
+        ):
             return
 
     content += "\n".join(patterns_to_add) + "\n"
 
     try:
         io.write_text(gitignore_file, content)
-        io.tool_output(f"Added {', '.join(patterns_to_add)} to .gitignore")
+        io.tool_output(f"Added {', '.join(patterns_to_add)} to .git/info/exclude")
     except OSError as e:
         io.tool_error(f"Error when trying to write to {gitignore_file}: {e}")
         io.tool_output(
-            "Try running with appropriate permissions or manually add these patterns to .gitignore:"
+            "Try running with appropriate permissions or manually add these patterns to .git/info/exclude:"
         )
         for pattern in patterns_to_add:
             io.tool_output(f"  {pattern}")
@@ -1007,6 +1009,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     ignores = []
     if git_root:
         ignores.append(str(Path(git_root) / ".gitignore"))
+        ignores.append(str(Path(git_root) / ".git/info/exclude"))
     if args.aiderignore:
         ignores.append(args.aiderignore)
 
