@@ -1820,14 +1820,13 @@ class Coder:
                 pass
 
             text = ""
-
             try:
                 reasoning_content = chunk.choices[0].delta.reasoning_content
             except AttributeError:
                 try:
                     reasoning_content = chunk.choices[0].delta.reasoning
                 except AttributeError:
-                    reasoning_content = None
+                    reasoning_content = getattr(chunk, "reasoning_content", None)
 
             if reasoning_content:
                 if not self.got_reasoning_content:
