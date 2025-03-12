@@ -27,9 +27,23 @@ And in your package's pyproject.toml:
 hello = "mypackage.commands:hello_command"
 ```
 
-3. Direct YAML File (not implemented yet):
+3. Direct File Path:
 ```bash
-$ aider --commands /path/to/commands.yaml
+$ aider --commands /abs/path/commands.py:function_name
+```
+Or within aider:
+```
+/cmd add /abs/path/module.py:custom_command
+```
+
+Requirements:
+- Path must be absolute
+- Colon-separated function name after file path
+- File must exist and be importable
+
+4. Direct YAML File (not implemented yet):
+```bash
+aider --commands /path/to/commands.yaml
 ```
 Or within aider:
 ```
@@ -84,6 +98,21 @@ Plugin commands add new Python functions:
 'plugin'
 >>> greet_cmd.definition
 'mypackage.greetings.say_hello'
+
+### File Path Plugin Example
+
+```python
+# Load from absolute path
+hello_cmd = UserCommand("hello", "plugin", "/abs/path/myplugins.py:say_hello")
+hello_cmd.command_type
+'plugin'
+```
+
+Implementation file (/abs/path/myplugins.py):
+```python
+def say_hello(commands, args):
+    commands.io.tool_output("Hello from file-based plugin!")
+```
 
 A plugin function should accept these parameters:
 - commands: The Commands instance

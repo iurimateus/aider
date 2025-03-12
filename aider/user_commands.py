@@ -1,6 +1,9 @@
 import yaml
+import os
+import sys
+import importlib.util
 from dataclasses import dataclass
-from typing import Optional, Dict, Set, Callable
+from typing import Optional, Callable
 from pathlib import Path
 from contextlib import contextmanager
 from importlib.metadata import entry_points
@@ -33,33 +36,68 @@ def load_plugin(plugin_spec):
     Raises:
         ImportError: If the plugin cannot be loaded, with detailed error information
     """
-    # Dotted path format: package.module.function
-    if not '#' in plugin_spec:
+    # File path with function: /abs/path/file.py:function_name
+    if ":" in plugin_spec:
+        file_path, _, func_name = plugin_spec.partition(":")
+        if not os.path.isabs(file_path):
+            raise ImportError(f"File path must be absolute: {file_path}")
+        if not os.path.exists(file_path):
+            raise ImportError(f"File not found: {file_path}")
+
+        module_name = os.path.splitext(os.path.basename(file_path))[0]
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if not spec:
+            raise ImportError(f"Could not load spec from {file_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["_cmd_" + module_name] = module
+        try:
+            if loader := spec.loader:
+                loader.exec_module(module)
+        except Exception as e:
+            raise ImportError(f"Error executing module {file_path}: {e}") from e
+
+        try:
+            return getattr(module, func_name)
+        except AttributeError:
+            raise ImportError(f"Module {module_name} has no function {func_name}")
+    elif "#" not in plugin_spec:
+        # Dotted path format: package.module.function
         return import_string(plugin_spec)
+    else:
+        # Entry point format: package#entry_point
+        package, entry_point = plugin_spec.split("#", 1)
+        group = f"{package}_aider_commands"
+        try:
+            eps = entry_points(group=group)
+            if not eps:
+                raise ImportError(f"No entry points found in group {group}")
+            if isinstance(eps, dict):  # Handle different entry_points() return types
+                if entry_point not in eps:
+                    raise ImportError(f"Entry point {entry_point} not found in {group}")
+                return eps[entry_point].load()
 
-    # Entry point format: package#entry_point
-    package, entry_point = plugin_spec.split('#', 1)
-    group = f'{package}_aider_commands'
-    try:
-        eps = entry_points(group=group)
-        if not eps:
-            raise ImportError(f"No entry points found in group {group}")
-        if isinstance(eps, dict):  # Handle different entry_points() return types
-            if entry_point not in eps:
+            matching = [ep for ep in eps if ep.name == entry_point]
+            if not matching:
                 raise ImportError(f"Entry point {entry_point} not found in {group}")
-            return eps[entry_point].load()
+            return matching[0].load()
+        except ImportError as e:
+            raise e
+        except Exception as e:
+            raise ImportError(
+                f"Error loading entry point {entry_point} from {group}: {str(e)}"
+            )
 
-        matching = [ep for ep in eps if ep.name == entry_point]
-        if not matching:
-            raise ImportError(f"Entry point {entry_point} not found in {group}")
-        return matching[0].load()
-    except ImportError as e:
-        raise e
-    except Exception as e:
-        raise ImportError(f"Error loading entry point {entry_point} from {group}: {str(e)}")
 
 def import_string(import_name):
     """Import a module path and return the attribute/class designated by the last name."""
+    # import importlib.util
+    # import sys
+    # spec = importlib.util.spec_from_file_location("module.name", "/path/to/file.py")
+    # foo = importlib.util.module_from_spec(spec)
+    # sys.modules["module.name"] = foo
+    # spec.loader.exec_module(foo)
+
     try:
         module_path, class_name = import_name.rsplit('.', 1)
     except ValueError as e:
@@ -186,7 +224,7 @@ class CommandLoader:
     def _parse_commands(self, config: dict) -> dict:
         """Parse commands from YAML config."""
         # Handle both top-level commands and direct command definitions
-        user_commands = config.get("commands", config)
+        user_commands = config.get("commands", {})
 
         if not isinstance(user_commands, dict):
             logger.warning(f"Invalid commands format, expected dict but got: {type(user_commands)}")
