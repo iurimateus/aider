@@ -93,6 +93,10 @@ class VADVoice:
         self.recording_thread = Thread(target=self._run_vad, daemon=True)
         self.recording_thread.start()
 
+        # # Warmup with silent audio
+        # silent_chunk = np.zeros(self.chunk_size, dtype=np.float32)
+        # self.audio_queue.put(silent_chunk)
+
     def stop(self):
         self.enabled = False
         if self.stop_event:
@@ -105,7 +109,7 @@ class VADVoice:
 
     def _run_vad(self):
         last_speech_time = time.time()
-        silence_timeout = 2.0  # Seconds of silence before transcribing
+        silence_timeout = 3.0  # Seconds of silence before transcribing
         listening_timeout = 3 * silence_timeout
         cb_called = False
 
@@ -189,17 +193,17 @@ class VADVoice:
                     file=wav_buffer,
                     language=self.language,
                     custom_llm_provider="openai",
-                )
+                    prompt="Developer talking to an AI coding assistant about its codebase.",
+                )  # type: ignore
 
             if text := transcript.text.strip():
-                self.io.tool_output(f"Transcribed: {text}")
-
                 # Append to placeholder instead of overwriting
-                self.io.interrupt_input()
                 if self.io.placeholder:
                     self.io.placeholder += " " + text
                 else:
                     self.io.placeholder = text
+                self.io.interrupt_input()
+
         except Exception as e:
             # if self.verbose:
             #     from aider.dump import dump
@@ -335,7 +339,7 @@ class Voice:
         input_thread.start()
 
         try:
-            timeout = 5  # seconds
+            silence_timeout = 3.5  # seconds
             with self.sd.InputStream(
                 samplerate=sample_rate, channels=1, callback=self.callback, device=self.device_id
             ):
@@ -344,7 +348,7 @@ class Voice:
                     if self.pct >= self.threshold + 0.02:
                         last_active_time = current_time
 
-                    if current_time - last_active_time >= timeout:
+                    if current_time - last_active_time >= silence_timeout:
                         break
 
                     # Shorter wait period allows checking activity more frequently
