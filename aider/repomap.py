@@ -54,7 +54,7 @@ class RepoMap:
         """
         # Use cached instance if available
         if not hasattr(RepoMap, '_stub_instance'):
-            RepoMap._stub_instance = RepoMap(map_tokens=0, io=io)
+            RepoMap._stub_instance = RepoMap(map_tokens=256, io=io)
 
         rm = RepoMap._stub_instance
 
@@ -63,7 +63,7 @@ class RepoMap:
         # Reuse existing tag parsing
         tags = rm.get_tags(fname, rel_fname)
         if not tags:
-            return f"# No outline available"
+            return "# No outline available"
 
         # Get all definition lines
         lois = [tag.line for tag in tags if tag.kind == "def"]
