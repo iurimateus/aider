@@ -713,7 +713,7 @@ class RepoMap:
 
     tree_cache = dict()
 
-    def render_tree(self, abs_fname, rel_fname, lois):
+    def render_tree(self, abs_fname, rel_fname, lois, header_max=10):
         mtime = self.get_mtime(abs_fname)
         key = (rel_fname, tuple(sorted(lois)), mtime)
 
@@ -740,6 +740,7 @@ class RepoMap:
                 loi_pad=0,
                 # header_max=30,
                 show_top_of_file_parent_scope=False,
+                header_max=header_max,
             )
             self.tree_context_cache[rel_fname] = {"context": context, "mtime": mtime}
 
