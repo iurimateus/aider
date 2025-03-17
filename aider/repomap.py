@@ -376,6 +376,9 @@ class RepoMap:
     def get_ranked_tags(
         self, chat_fnames, other_fnames, mentioned_fnames, mentioned_idents, progress=None
     ):
+        # Store graph data for debugging
+        self.G = None
+        self.ranked_definitions = None
         import networkx as nx
 
         defines = defaultdict(set)
@@ -555,13 +558,14 @@ class RepoMap:
                 ranked_definitions[(dst, ident)] += data["rank"]
 
         ranked_tags = []
-        ranked_definitions = sorted(
+        self.ranked_definitions = sorted(
             ranked_definitions.items(), reverse=True, key=lambda x: (x[1], x[0])
         )
+        self.G = G
 
         # dump(ranked_definitions)
 
-        for (fname, ident), rank in ranked_definitions:
+        for (fname, ident), rank in ranked_definitions.items():
             # print(f"{rank:.03f} {fname} {ident}")
             if fname in chat_rel_fnames:
                 continue
@@ -709,6 +713,86 @@ class RepoMap:
             middle = int((lower_bound + upper_bound) // 2)
 
         spin.end()
+
+        if best_tree:
+            import tempfile
+            import json
+            from collections import defaultdict
+
+            # Write repo map contents
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+                f.write(best_tree)
+                map_debug_fname = f.name
+
+            # Write graph data and pagerank results
+            graph_data = defaultdict(list)
+            if hasattr(self, 'G') and hasattr(self, 'ranked_definitions'):
+                # Collect PageRank results
+                # Collect detailed pagerank with definition locations
+                definition_locations = defaultdict(list)
+                for (fname, ident), rank in self.ranked_definitions:
+                    tags = [tag for tag in self.get_tags(fname, fname) if tag.name == ident and tag.kind == "def"]
+                    line_numbers = [tag.line+1 for tag in tags]  # +1 for 1-based numbering
+                    definition_locations[ident].append((fname, line_numbers, rank))
+
+                graph_data['pagerank_details'] = definition_locations
+
+                # Collect edges with reference counts per definer
+                reference_counts = defaultdict(lambda: defaultdict(int))
+                for src, dst, data in self.G.edges(data=True):
+                    ident = data.get('ident', '')
+                    reference_counts[ident][dst] += data['weight']
+
+                graph_data['reference_counts'] = reference_counts
+
+                # Collect scope context for identifiers
+                scope_context = defaultdict(set)
+                for _, _, data in self.G.edges(data=True):
+                    ident = data.get('ident', '')
+                    if not ident:
+                        continue
+                    abs_target = os.path.join(self.root, data['target'])
+                    tags = [tag for tag in self.get_tags(abs_target, data['target'])
+                           if tag.name == ident and tag.kind == "def"]
+                    for tag in tags:
+                        # Extract parent class/namespace from file structure
+                        code = self.io.read_text(tag.fname) or ""
+                        if code:
+                            lines = code.splitlines()
+                            if tag.line < len(lines):
+                                context_line = lines[tag.line].strip()
+                                scope_context[ident].add(f"{tag.fname}:{tag.line+1} - {context_line}")
+
+                graph_data['scope_context'] = scope_context
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix="_graph.md", delete=False) as f:
+                f.write("## Detailed PageRank Results\n")
+                for ident, definitions in graph_data.get('pagerank_details', {}).items():
+                    f.write(f"\n### {ident}\n")
+                    for fname, lines, rank in sorted(definitions, key=lambda x: -x[2]):
+                        line_nums = ", ".join(map(str, lines))
+                        f.write(f"- {fname} (lines {line_nums}): {rank:.4f}\n")
+
+                f.write("\n## Reference Counts per Definers\n")
+                for ident, counts in graph_data.get('reference_counts', {}).items():
+                    f.write(f"\n### {ident}\n")
+                    total = sum(counts.values())
+                    for definer, count in sorted(counts.items(), key=lambda x: -x[1]):
+                        pct = count/total*100 if total else 0
+                        f.write(f"- {definer}: {count:.1f} ({pct:.1f}%)\n")
+
+                f.write("\n## Definition Contexts\n")
+                for ident, contexts in graph_data.get('scope_context', {}).items():
+                    f.write(f"\n### {ident}\n")
+                    for context in sorted(contexts):
+                        f.write(f"- {context}\n")
+
+                graph_debug_fname = f.name
+
+            if self.io:
+                self.io.tool_output(f"Repo map debug file created: {map_debug_fname}")
+                self.io.tool_output(f"Repo graph debug file created: {graph_debug_fname}")
+
         return best_tree
 
     tree_cache = dict()
