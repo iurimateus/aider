@@ -751,8 +751,8 @@ class RepoMap:
                     ident = data.get('ident', '')
                     if not ident:
                         continue
-                    abs_target = os.path.join(self.root, data['target'])
-                    tags = [tag for tag in self.get_tags(abs_target, data['target'])
+                    abs_target = os.path.join(self.root, dst)
+                    tags = [tag for tag in self.get_tags(abs_target, dst)
                            if tag.name == ident and tag.kind == "def"]
                     for tag in tags:
                         # Extract parent class/namespace from file structure
