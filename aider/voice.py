@@ -339,13 +339,13 @@ class Voice:
         input_thread.start()
 
         try:
-            silence_timeout = 3.5  # seconds
+            silence_timeout = 4  # seconds
             with self.sd.InputStream(
                 samplerate=sample_rate, channels=1, callback=self.callback, device=self.device_id
             ):
                 while not stop_event.is_set():
                     current_time = time.time()
-                    if self.pct >= self.threshold + 0.02:
+                    if self.pct >= self.threshold + 0.01:
                         last_active_time = current_time
 
                     if current_time - last_active_time >= silence_timeout:

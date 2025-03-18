@@ -8,6 +8,8 @@ class ContextCoder(Coder):
     edit_format = "context"
     gpt_prompts = ContextPrompts()
 
+    og_header_max: int = 3
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -17,6 +19,9 @@ class ContextCoder(Coder):
         self.repo_map.refresh = "always"
         self.repo_map.max_map_tokens *= self.repo_map.map_mul_no_files
         self.repo_map.map_mul_no_files = 1.0
+
+        self.og_header_max = self.repo_map.header_max
+        self.repo_map.header_max = 4
 
     def reply_completed(self):
         content = self.partial_response_content
@@ -43,6 +48,8 @@ class ContextCoder(Coder):
         # dump(self.get_inchat_relative_files())
 
         self.reflected_message = self.gpt_prompts.try_again
+
+        self.repo_map.header_max = self.og_header_max
 
         # mentioned_idents = self.get_ident_mentions(cur_msg_text)
         # if mentioned_idents:

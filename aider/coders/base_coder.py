@@ -17,10 +17,11 @@ from collections import defaultdict
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
-from typing import List
+from typing import List, Set, cast
 
 from aider import __version__, models, prompts, urls, utils
 from aider.analytics import Analytics
+from aider.coders.base_prompts import CoderPrompts
 from aider.commands import Commands
 from aider.exceptions import LiteLLMExceptions
 from aider.history import ChatSummary
@@ -76,12 +77,12 @@ all_fences = [
 
 
 class Coder:
-    abs_fnames = None
-    abs_read_only_fnames = None
-    abs_read_only_stubs_fnames = None
-    repo = None
+    abs_fnames: Set[str] = set()
+    abs_read_only_fnames: Set[str] = set()
+    abs_read_only_stubs_fnames: Set[str] = set()
+    repo: GitRepo | None = None
     last_aider_commit_hash = None
-    aider_edited_files = None
+    aider_edited_files: Set[str] = set()
     last_asked_for_commit_time = 0
     repo_map = None
     functions = None
@@ -112,13 +113,14 @@ class Coder:
     ignore_mentions = None
     chat_language = None
     file_watcher = None
+    gpt_prompts: CoderPrompts
 
     @classmethod
     def create(
         self,
         main_model=None,
         edit_format=None,
-        io=None,
+        io: InputOutput | None = None,
         from_coder=None,
         summarize_from_coder=True,
         **kwargs,
@@ -140,7 +142,7 @@ class Coder:
                 edit_format = main_model.edit_format
 
         if not io and from_coder:
-            io = from_coder.io
+            io = cast(InputOutput, from_coder.io)
 
         if from_coder:
             use_kwargs = dict(from_coder.original_kwargs)  # copy orig kwargs
@@ -155,9 +157,11 @@ class Coder:
                     done_messages = from_coder.summarizer.summarize_all(done_messages)
                 except ValueError:
                     # If summarization fails, keep the original messages and warn the user
-                    io.tool_warning(
-                        "Chat history summarization failed, continuing with full history"
-                    )
+                    msg = "Chat history summarization failed, continuing with full history"
+                    if io:
+                        io.tool_warning(msg)
+                    else:
+                        print(msg)
 
             # Bring along context from the old Coder
             update = dict(
@@ -1476,11 +1480,6 @@ class Coder:
             self.remove_reasoning_content()
             self.multi_response_content = ""
 
-        ###
-        # print()
-        # print("=" * 20)
-        # dump(self.partial_response_content)
-
         self.io.tool_output()
 
         self.show_usage_report()
@@ -1552,7 +1551,7 @@ class Coder:
 
         if edited and self.auto_lint:
             lint_errors = self.lint_edited(edited)
-            self.auto_commit(edited, context="Ran the linter")
+            self.auto_commit(edited, context="Ran the linter", linter=True)
             self.lint_outcome = not lint_errors
             if lint_errors:
                 ok = self.io.confirm_ask("Attempt to fix lint errors?")
@@ -2073,7 +2072,7 @@ class Coder:
         return cur + new
 
     def get_file_stub(self, fname):
-        return RepoMap.get_file_stub(fname, self.io)
+        return RepoMap.get_file_stub(fname, self.io, self.repo_map.header_max)
 
     def get_rel_fname(self, fname):
         try:
@@ -2316,7 +2315,7 @@ class Coder:
 
         return context
 
-    def auto_commit(self, edited, context=None):
+    def auto_commit(self, edited, context=None, linter=False):
         if not self.repo or not self.auto_commits or self.dry_run:
             return
 
@@ -2324,7 +2323,14 @@ class Coder:
             context = self.get_context_from_history(self.cur_messages)
 
         try:
-            res = self.repo.commit(fnames=edited, context=context, aider_edits=True)
+            if linter:
+                message = "chore: auto lint fix (aider)"
+                res = self.repo.commit(
+                    fnames=edited, context=context, aider_edits=True, message=message
+                )
+            else:
+                res = self.repo.commit(fnames=edited, context=context, aider_edits=True)
+
             if res:
                 self.show_auto_commit_outcome(res)
                 commit_hash, commit_message = res
@@ -2349,7 +2355,10 @@ class Coder:
     def show_undo_hint(self):
         if not self.commit_before_message:
             return
-        if self.commit_before_message[-1] != self.repo.get_head_commit_sha():
+        if (
+            self.repo
+            and self.commit_before_message[-1] != self.repo.get_head_commit_sha()
+        ):
             self.io.tool_output("You can use /undo to undo and discard each aider commit.")
 
     def dirty_commit(self):

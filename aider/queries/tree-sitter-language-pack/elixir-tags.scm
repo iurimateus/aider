@@ -6,6 +6,16 @@
   (arguments (alias) @name.definition.module)
   (#any-of? @ignore "defmodule" "defprotocol")) @definition.module
 
+(call
+  target: (identifier) @ignore
+  (arguments (alias) @name.definition.module)
+  (#any-of? @ignore "defmodule" "defprotocol")) @module
+
+(call
+  target: (identifier) @ignore
+  (arguments (string (quoted_content)))
+  (#match? @ignore "^(schema|embedded_schema)$")) @definition.ecto_schema
+
 ; * functions/macros
 (call
   target: (identifier) @ignore

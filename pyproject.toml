@@ -48,3 +48,6 @@ write_to = "aider/_version.py"
 [tool.codespell]
 skip = "*.svg,Gemfile.lock"
 write-changes = true
+
+[tool.uv.sources]
+litellm = { path = "./vendor/litellm", editable = true }

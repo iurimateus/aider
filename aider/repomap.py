@@ -42,7 +42,7 @@ class RepoMap:
     warned_files = set()
 
     @staticmethod
-    def get_file_stub(fname, io):
+    def get_file_stub(fname, io, header_max=None):
         """Generate a complete structural outline of a source code file.
 
         Args:
@@ -69,7 +69,7 @@ class RepoMap:
         lois = [tag.line for tag in tags if tag.kind == "def"]
 
         # Reuse existing tree rendering
-        outline = rm.render_tree(fname, rel_fname, lois)
+        outline = rm.render_tree(fname, rel_fname, lois, header_max=header_max)
 
         return f"{outline}"
 
@@ -84,6 +84,7 @@ class RepoMap:
         max_context_window=None,
         map_mul_no_files=8,
         refresh="auto",
+        header_max=7,
     ):
         self.io = io
         self.verbose = verbose
@@ -109,6 +110,7 @@ class RepoMap:
         self.map_cache = {}
         self.map_processing_time = 0
         self.last_map = None
+        self.header_max = header_max or 7
 
         if self.verbose:
             self.io.tool_output(
@@ -797,7 +799,7 @@ class RepoMap:
 
     tree_cache = dict()
 
-    def render_tree(self, abs_fname, rel_fname, lois, header_max=10):
+    def render_tree(self, abs_fname, rel_fname, lois, header_max=None):
         mtime = self.get_mtime(abs_fname)
         key = (rel_fname, tuple(sorted(lois)), mtime)
 
@@ -822,7 +824,6 @@ class RepoMap:
                 margin=0,
                 mark_lois=False,
                 loi_pad=0,
-                # header_max=30,
                 show_top_of_file_parent_scope=False,
                 header_max=header_max,
             )
@@ -857,7 +858,9 @@ class RepoMap:
                 if lois is not None:
                     output += "\n"
                     output += cur_fname + ":\n"
-                    output += self.render_tree(cur_abs_fname, cur_fname, lois)
+                    output += self.render_tree(
+                        cur_abs_fname, cur_fname, lois, self.header_max
+                    )
                     lois = None
                 elif cur_fname:
                     output += "\n" + cur_fname + "\n"

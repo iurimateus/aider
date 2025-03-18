@@ -1,9 +1,11 @@
 import os
 import time
 from pathlib import Path, PurePosixPath
+from typing import List, cast
 
 try:
     import git
+    from git import Repo
 
     ANY_GIT_ERROR = [
         git.exc.ODBError,
@@ -35,7 +37,7 @@ ANY_GIT_ERROR = tuple(ANY_GIT_ERROR)
 
 
 class GitRepo:
-    repo = None
+    repo: Repo | None = None
     aider_ignore_file = None
     aider_ignore_spec = None
     aider_ignore_ts = 0
@@ -60,7 +62,7 @@ class GitRepo:
         git_commit_verify=True,
     ):
         self.io = io
-        self.models = models
+        self.models: List = models or []
 
         self.normalized_path = {}
         self.tree_files = {}
@@ -90,8 +92,8 @@ class GitRepo:
                 fname = fname.parent
 
             try:
-                repo_path = git.Repo(fname, search_parent_directories=True).working_dir
-                repo_path = utils.safe_abs_path(repo_path)
+                repo = git.Repo(fname, search_parent_directories=True)  # type: ignore
+                repo_path = utils.safe_abs_path(repo.working_dir)
                 repo_paths.append(repo_path)
             except ANY_GIT_ERROR:
                 pass
@@ -105,13 +107,18 @@ class GitRepo:
             raise FileNotFoundError
 
         # https://github.com/gitpython-developers/GitPython/issues/427
-        self.repo = git.Repo(repo_paths.pop(), odbt=git.GitDB)
-        self.root = utils.safe_abs_path(self.repo.working_tree_dir)
+        self.repo = git and git.Repo(repo_paths.pop(), odbt=git.GitDB)  # type: ignore
+        self.root = self.repo and utils.safe_abs_path(self.repo.working_tree_dir)
 
         if aider_ignore_file:
             self.aider_ignore_file = Path(aider_ignore_file)
 
-    def commit(self, fnames=None, context=None, message=None, aider_edits=False):
+    def commit(
+        self, fnames=None, context=None, message: str | None = None, aider_edits=False
+    ):
+        if not self.repo:
+            return
+
         if not fnames and not self.repo.is_dirty():
             return
 
@@ -124,12 +131,12 @@ class GitRepo:
         else:
             commit_message = self.get_commit_message(diffs, context)
 
-        if aider_edits and self.attribute_commit_message_author:
-            commit_message = "aider: " + commit_message
-        elif self.attribute_commit_message_committer:
-            commit_message = "aider: " + commit_message
-
-        if not commit_message:
+        if commit_message:
+            if aider_edits and self.attribute_commit_message_author:
+                commit_message = "aider: " + commit_message
+            elif self.attribute_commit_message_committer:
+                commit_message = "aider: " + commit_message
+        else:
             commit_message = "(no commit message provided)"
 
         full_commit_message = commit_message
@@ -150,16 +157,16 @@ class GitRepo:
         else:
             cmd += ["-a"]
 
-        original_user_name = self.repo.git.config("--get", "user.name")
-        original_committer_name_env = os.environ.get("GIT_COMMITTER_NAME")
-        committer_name = f"{original_user_name} (aider)"
+        # original_user_name = self.repo.git.config("--get", "user.name")
+        # original_committer_name_env = os.environ.get("GIT_COMMITTER_NAME")
+        # committer_name = f"{original_user_name} (aider)"
 
-        if self.attribute_committer:
-            os.environ["GIT_COMMITTER_NAME"] = committer_name
-
-        if aider_edits and self.attribute_author:
-            original_author_name_env = os.environ.get("GIT_AUTHOR_NAME")
-            os.environ["GIT_AUTHOR_NAME"] = committer_name
+        # if self.attribute_committer:
+        #     os.environ["GIT_COMMITTER_NAME"] = committer_name
+        #
+        # if aider_edits and self.attribute_author:
+        #     original_author_name_env = os.environ.get("GIT_AUTHOR_NAME")
+        #     os.environ["GIT_AUTHOR_NAME"] = committer_name
 
         try:
             self.repo.git.commit(cmd)
@@ -169,27 +176,27 @@ class GitRepo:
         except ANY_GIT_ERROR as err:
             self.io.tool_error(f"Unable to commit: {err}")
         finally:
+            pass
             # Restore the env
+            # if self.attribute_committer:
+            #     if original_committer_name_env is not None:
+            #         os.environ["GIT_COMMITTER_NAME"] = original_committer_name_env
+            #     else:
+            #         del os.environ["GIT_COMMITTER_NAME"]
 
-            if self.attribute_committer:
-                if original_committer_name_env is not None:
-                    os.environ["GIT_COMMITTER_NAME"] = original_committer_name_env
-                else:
-                    del os.environ["GIT_COMMITTER_NAME"]
-
-            if aider_edits and self.attribute_author:
-                if original_author_name_env is not None:
-                    os.environ["GIT_AUTHOR_NAME"] = original_author_name_env
-                else:
-                    del os.environ["GIT_AUTHOR_NAME"]
+            # if aider_edits and self.attribute_author:
+            #     if original_author_name_env is not None:
+            #         os.environ["GIT_AUTHOR_NAME"] = original_author_name_env
+            #     else:
+            #         del os.environ["GIT_AUTHOR_NAME"]
 
     def get_rel_repo_dir(self):
         try:
-            return os.path.relpath(self.repo.git_dir, os.getcwd())
+            return self.repo and os.path.relpath(self.repo.git_dir, os.getcwd())
         except (ValueError, OSError):
-            return self.repo.git_dir
+            return self.repo and self.repo.git_dir
 
-    def get_commit_message(self, diffs, context):
+    def get_commit_message(self, diffs, context) -> str | None:
         diffs = "# Diffs:\n" + diffs
 
         content = ""
@@ -203,7 +210,7 @@ class GitRepo:
             dict(role="user", content=content),
         ]
 
-        commit_message = None
+        commit_message: str = ""
         for model in self.models:
             num_tokens = model.token_count(messages)
             max_tokens = model.info.get("max_input_tokens") or 0
@@ -217,9 +224,11 @@ class GitRepo:
             self.io.tool_error("Failed to generate commit message!")
             return
 
-        commit_message = commit_message.strip()
+        commit_message = cast(str, commit_message).strip()
         if commit_message and commit_message[0] == '"' and commit_message[-1] == '"':
             commit_message = commit_message[1:-1].strip()
+
+        commit_message = utils.remove_enclosing_triple_backquotes(commit_message)
 
         return commit_message
 
@@ -228,10 +237,10 @@ class GitRepo:
 
         current_branch_has_commits = False
         try:
-            active_branch = self.repo.active_branch
+            active_branch = self.repo and self.repo.active_branch
             try:
-                commits = self.repo.iter_commits(active_branch)
-                current_branch_has_commits = any(commits)
+                commits = self.repo and self.repo.iter_commits(active_branch)
+                current_branch_has_commits = commits and any(commits)
             except ANY_GIT_ERROR:
                 pass
         except (TypeError,) + ANY_GIT_ERROR:
@@ -319,11 +328,14 @@ class GitRepo:
                 self.tree_files[commit] = set(files)
 
         # Add staged files
-        index = self.repo.index
+        # index = self.repo.index
         try:
-            staged_files = [path for path, _ in index.entries.keys()]
+            staged_files: List[str] = self.repo.git.diff(
+                "--name-only", "--cached"
+            ).splitlines()
+            # staged_files = [path for path, _ in index.entries.keys()]
             files.update(self.normalize_path(path) for path in staged_files)
-        except ANY_GIT_ERROR as err:
+        except ANY_GIT_ERROR as err:  # type: ignore
             self.io.tool_error(f"Unable to read staged files: {err}")
 
         res = [fname for fname in files if not self.ignored_file(fname)]

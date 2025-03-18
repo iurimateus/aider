@@ -18,3 +18,5 @@ aider/_version.py
 tmp.benchmarks/
 *~
 /uv.lock
+
+vendor/

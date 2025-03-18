@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import overload
 
 from aider.dump import dump  # noqa: F401
 
@@ -388,6 +389,22 @@ def printable_shell_command(cmd_list):
         return subprocess.list2cmdline(cmd_list)
     else:
         return shlex.join(cmd_list)
+
+
+@overload
+def remove_enclosing_triple_backquotes(s: None) -> None: ...
+
+
+@overload
+def remove_enclosing_triple_backquotes(s: str) -> str: ...
+
+
+def remove_enclosing_triple_backquotes(s: str | None) -> str | None:
+    if s and s.startswith("```") and s.endswith("```"):
+        splitted = s.splitlines()
+        return "\n".join(splitted[1:-1]).strip()
+
+    return s
 
 
 def main():

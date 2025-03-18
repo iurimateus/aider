@@ -720,6 +720,9 @@ class Commands:
             fname = f'"{fname}"'
         return fname
 
+    def completions_raw_stub(self, document, complete_event):
+        return self.completions_raw_read_only(document, complete_event)
+
     def completions_raw_read_only_stub(self, document, complete_event):
         return self.completions_raw_read_only(document, complete_event)
 
@@ -1552,7 +1555,7 @@ class Commands:
             target_mode="read-only",
         )
 
-    def cmd_read_only_stub(self, args):
+    def cmd_stub(self, args):
         "Add files to the chat as read-only stubs, or turn added files to read-only (stubs)"
         self._cmd_read_only_base(
             args,
@@ -1671,9 +1674,9 @@ class Commands:
                     # Use absolute path for files outside repo root, relative path for files inside
                     if Path(fname).is_relative_to(self.coder.root):
                         rel_fname = self.coder.get_rel_fname(fname)
-                        f.write(f"/read-only-stub {rel_fname}\n")
+                        f.write(f"/stub {rel_fname}\n")
                     else:
-                        f.write(f"/read-only-stub {fname}\n")
+                        f.write(f"/stub {fname}\n")
 
             self.io.tool_output(f"Saved commands to {args.strip()}")
         except Exception as e:
