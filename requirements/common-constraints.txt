@@ -155,7 +155,7 @@ grpcio==1.71.0
     #   grpcio-status
 grpcio-status==1.71.0
     # via google-api-core
-h11==0.14.0
+h11==0.16.0
     # via httpcore
 httpcore==1.0.8
     # via httpx
@@ -337,7 +337,7 @@ propcache==0.3.1
     #   yarl
 proto-plus==1.26.1
     # via google-api-core
-protobuf==5.29.4
+protobuf==5.29.5
     # via
     #   google-api-core
     #   googleapis-common-protos
@@ -420,7 +420,7 @@ regex==2024.11.6
     #   nltk
     #   tiktoken
     #   transformers
-requests==2.32.3
+requests==2.32.4
     # via
     #   google-api-core
     #   google-cloud-bigquery
@@ -454,7 +454,7 @@ semver==3.0.4
     # via -r requirements/requirements-dev.in
 sentence-transformers==4.0.2
     # via llama-index-embeddings-huggingface
-setuptools==78.1.0
+setuptools==78.1.1
     # via pip-tools
 shellingham==1.5.4
     # via typer
@@ -499,11 +499,11 @@ tokenizers==0.21.1
     #   transformers
 toml==0.10.2
     # via streamlit
-torch==2.2.2
+torch==2.7.1
     # via
     #   -r requirements/requirements-help.in
     #   sentence-transformers
-tornado==6.4.2
+tornado==6.5
     # via streamlit
 tqdm==4.67.1
     # via
@@ -554,7 +554,7 @@ typing-inspection==0.4.0
     # via pydantic
 tzdata==2025.2
     # via pandas
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   mixpanel
     #   requests
